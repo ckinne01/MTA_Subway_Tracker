@@ -39,7 +39,6 @@ def process_and_store_data(responses):
     conn = sqlite3.connect('data/mta_data.db')
     c = conn.cursor()
 
-    c.execute('DELETE FROM trip_updates')
     for response in responses:
         if not response:
             continue
@@ -49,6 +48,7 @@ def process_and_store_data(responses):
         except Exception as e:
             print(f"Error parsing a feed: {e}")
             continue
+
         for entity in feed.entity:
             if entity.HasField('trip_update'):
                 trip = entity.trip_update.trip
@@ -80,7 +80,7 @@ def process_and_store_data(responses):
                         stop_name = stop_id
                     
                     c.execute('''
-                        INSERT INTO trip_updates (route_id, trip_id, direction_id, track_direction, start_time, start_date, 
+                        INSERT OR IGNORE INTO trip_updates (route_id, trip_id, direction_id, track_direction, start_time, start_date, 
                             stop_name, arrival_time, departure_time)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (route_id, trip_id, direction_id, track_direction, start_time, start_date, stop_name, arrival_dt[11:19], departure_dt[11:19]))
