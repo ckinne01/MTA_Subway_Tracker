@@ -7,25 +7,34 @@ import datetime
 from zoneinfo import ZoneInfo
 import sqlite3
 
-def init_db():
-    conn = sqlite3.connect('data/mta_data.db')
-    c = conn.cursor()
-    c.execute('''
+def init_databases():
+    # Database used for realtime updates on data, will be wiped clean with every refresh
+    conn_realtime = sqlite3.connect('data/realtime.db')
+    c_realtime = conn_realtime.cursor()
+    c_realtime.execute('''
         CREATE TABLE IF NOT EXISTS trip_updates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            route_id TEXT,
-            trip_id TEXT,
-            direction_id INTEGER,
-            track_direction TEXT,
-            start_time TEXT,
-            start_date TEXT,
-            stop_name TEXT,
-            arrival_time TEXT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT, route_id TEXT, trip_id TEXT, 
+            direction_id INTEGER, track_direction TEXT, start_time TEXT,
+            start_date TEXT, stop_name TEXT, arrival_time TEXT, 
             departure_time TEXT
         )
     ''')
-    conn.commit()
-    conn.close()
+    conn_realtime.commit()
+    conn_realtime.close()
+
+    #Database to store historical data, used for predictive model
+    conn_historical = sqlite3.connect('data/historical_data.db')
+    c_historical = conn_historical.cursor()
+    c_historical.execute('''
+        CREATE TABLE IF NOT EXISTS trip_updates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, route_id TEXT, trip_id TEXT, 
+            direction_id INTEGER, track_direction TEXT, start_time TEXT,
+            start_date TEXT, stop_name TEXT, arrival_time TEXT, 
+            departure_time TEXT, UNIQUE(trip_id, start_date, stop_name)
+        )
+    ''')
+    conn_historical.commit()
+    conn_historical.close()
 
 def fetch_mta_data(url):
     response = requests.get(url)
@@ -36,8 +45,13 @@ def fetch_mta_data(url):
 
 def process_and_store_data(responses):
     stops_df = pd.read_csv("data/stops.txt", index_col=0)
-    conn = sqlite3.connect('data/mta_data.db')
-    c = conn.cursor()
+    
+    conn_realtime = sqlite3.connect('data/realtime.db')
+    conn_historical = sqlite3.connect('data/historical_data.db')
+    c_realtime = conn_realtime.cursor()
+    c_historical = conn_historical.cursor()
+
+    c_realtime.execute('DELETE FROM trip_updates')
 
     for response in responses:
         if not response:
@@ -79,18 +93,28 @@ def process_and_store_data(responses):
                     except:
                         stop_name = stop_id
                     
-                    c.execute('''
+                    data_tuple = (route_id, trip_id, direction_id, track_direction, start_time, start_date, 
+                                    stop_name, arrival_dt[11:19], departure_dt[11:19])
+                    c_realtime.execute('''
+                        INSERT INTO trip_updates (route_id, trip_id, direction_id, track_direction, start_time, start_date, 
+                            stop_name, arrival_time, departure_time)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', data_tuple)
+                    
+                    c_historical.execute('''
                         INSERT OR IGNORE INTO trip_updates (route_id, trip_id, direction_id, track_direction, start_time, start_date, 
                             stop_name, arrival_time, departure_time)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (route_id, trip_id, direction_id, track_direction, start_time, start_date, stop_name, arrival_dt[11:19], departure_dt[11:19]))
+                        ''', data_tuple)
 
-    conn.commit()
-    conn.close()
+    conn_realtime.commit()
+    conn_realtime.close()
+    conn_historical.commit()
+    conn_historical.close()
     return 
 
 def get_data_from_db():
-    conn = sqlite3.connect('data/mta_data.db')
+    conn = sqlite3.connect('data/realtime.db')
     df = pd.read_sql_query('SELECT * FROM trip_updates', conn)
     conn.close()
     return df
@@ -113,7 +137,7 @@ MTA_FEEDS = {
 if 'last_update' not in st.session_state:
     st.session_state.last_update = None
 
-init_db()
+init_databases()
 
 col1, col2 = st.columns([3, 1])
 
