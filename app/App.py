@@ -34,15 +34,21 @@ def fetch_mta_data(url):
     else:
         return None
 
-def process_and_store_data(response):
+def process_and_store_data(responses):
     stops_df = pd.read_csv("data/stops.txt", index_col=0)
-    if response:
-        feed = gtfs_realtime_pb2.FeedMessage()
-        feed.ParseFromString(response)
-        conn = sqlite3.connect('data/mta_data.db')
-        c = conn.cursor()
+    conn = sqlite3.connect('data/mta_data.db')
+    c = conn.cursor()
 
-        c.execute('DELETE FROM trip_updates')
+    c.execute('DELETE FROM trip_updates')
+    for response in responses:
+        if not response:
+            continue
+        feed = gtfs_realtime_pb2.FeedMessage()
+        try:
+            feed.ParseFromString(response)
+        except Exception as e:
+            print(f"Error parsing a feed: {e}")
+            continue
         for entity in feed.entity:
             if entity.HasField('trip_update'):
                 trip = entity.trip_update.trip
@@ -54,12 +60,14 @@ def process_and_store_data(response):
 
                 for stop_time_update in entity.trip_update.stop_time_update:
                     stop_id = stop_time_update.stop_id
+
                     if stop_id.endswith('N'):
                         track_direction = 'Northbound'
                     elif stop_id.endswith('S'):
                         track_direction = 'Southbound'
                     else:
                         track_direction = 'Unknown'
+                    
                     arrival_time = stop_time_update.arrival.time
                     arrival_dt = datetime.datetime.fromtimestamp(arrival_time, tz=ZoneInfo("America/New_York"))
                     arrival_dt = str(arrival_dt)
@@ -76,11 +84,9 @@ def process_and_store_data(response):
                             stop_name, arrival_time, departure_time)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', (route_id, trip_id, direction_id, track_direction, start_time, start_date, stop_name, arrival_dt[11:19], departure_dt[11:19]))
-        conn.commit()
-        conn.close()
 
-    else:
-        print("Data not successfully accessed.")
+    conn.commit()
+    conn.close()
     return 
 
 def get_data_from_db():
@@ -93,6 +99,17 @@ def get_data_from_db():
 
 st.title('MTA Subway Real-Time Tracker')
 
+MTA_FEEDS = {
+    '1, 2, 3, 4, 5, 6, 7, S': "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs",
+    'A, C, E, H': "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace",
+    'N, Q, R, W': "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-nqrw",
+    'B, D, F, M': "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-bdfm",
+    'L': "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-l",
+    'G': "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-g",
+    'J, Z': "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-jz",
+    'SIR': "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-si",
+}
+
 if 'last_update' not in st.session_state:
     st.session_state.last_update = None
 
@@ -103,14 +120,15 @@ col1, col2 = st.columns([3, 1])
 with col1:
     if st.button('Refresh Live Data'):
         with st.spinner ('Fetching latest data from MTA...'):
-            url = "https://api-endpoint.mta.info/Dataservice/mtagtfsfeeds/nyct%2Fgtfs-ace"
-            response_content = fetch_mta_data(url)
-            if response_content:
-                process_and_store_data(response_content)
-                st.session_state.last_update = datetime.datetime.now(ZoneInfo('America/New_York'))
-                st.success('Data refreshed!')
-            else:
-                st.error('Failed to fetch data from MTA.')
+            all_responses = []
+            for feed_name, feed_url in MTA_FEEDS.items():
+                st.write(f"Fetching {feed_name}...")
+                response_content = fetch_mta_data(feed_url)
+                all_responses.append(response_content)
+            
+            process_and_store_data(all_responses)
+            st.session_state.last_update = datetime.datetime.now(ZoneInfo('America/New_York'))
+            st.success('Data refreshed!')
 
 with col2:
     if st.session_state.last_update:
