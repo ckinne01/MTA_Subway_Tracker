@@ -15,7 +15,7 @@ def init_databases():
         CREATE TABLE IF NOT EXISTS trip_updates (
             id INTEGER PRIMARY KEY AUTOINCREMENT, route_id TEXT, trip_id TEXT, 
             direction_id INTEGER, track_direction TEXT, start_time TEXT,
-            start_date TEXT, stop_name TEXT, arrival_time TEXT, 
+            start_date TEXT, stop_id TEXT, stop_name TEXT, arrival_time TEXT, 
             departure_time TEXT
         )
     ''')
@@ -29,7 +29,7 @@ def init_databases():
         CREATE TABLE IF NOT EXISTS trip_updates (
             id INTEGER PRIMARY KEY AUTOINCREMENT, route_id TEXT, trip_id TEXT, 
             direction_id INTEGER, track_direction TEXT, start_time TEXT,
-            start_date TEXT, stop_name TEXT, arrival_time TEXT, 
+            start_date TEXT, stop_id TEXT, stop_name TEXT, arrival_time TEXT, 
             departure_time TEXT, UNIQUE(trip_id, start_date, stop_name)
         )
     ''')
@@ -94,17 +94,17 @@ def process_and_store_data(responses):
                         stop_name = stop_id
                     
                     data_tuple = (route_id, trip_id, direction_id, track_direction, start_time, start_date, 
-                                    stop_name, arrival_dt[11:19], departure_dt[11:19])
+                                    stop_id, stop_name, arrival_dt[11:19], departure_dt[11:19])
                     c_realtime.execute('''
                         INSERT INTO trip_updates (route_id, trip_id, direction_id, track_direction, start_time, start_date, 
-                            stop_name, arrival_time, departure_time)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            stop_id, stop_name, arrival_time, departure_time)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', data_tuple)
                     
                     c_historical.execute('''
                         INSERT OR IGNORE INTO trip_updates (route_id, trip_id, direction_id, track_direction, start_time, start_date, 
-                            stop_name, arrival_time, departure_time)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            stop_id, stop_name, arrival_time, departure_time)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ''', data_tuple)
 
     conn_realtime.commit()
